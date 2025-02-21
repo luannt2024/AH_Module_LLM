@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 import cv2
 import numpy as np
 import insightface
@@ -6,7 +6,36 @@ from insightface.app import FaceAnalysis
 from tensorflow.keras.models import load_model
 from ultralytics import YOLO  
 
+from flask_jwt_extended import (
+    JWTManager, create_access_token, create_refresh_token,
+    jwt_required, get_jwt_identity
+)
+import psycopg2
+from database import conn, cur
+import bcrypt
+
 app = Flask(__name__)
+
+app.config['JWT_SECRET_KEY'] = '74678234623879642398746283974623987642398746239874623987649823764923876492837649238764289736'
+jwt = JWTManager(app)
+
+def get_db():
+    if not hasattr(g, 'db'):  # Kiểm tra nếu chưa có kết nối database
+        g.db = psycopg2.connect(
+            dbname="authentication_python",
+            user="postgres",
+            password="password",
+            host="localhost",
+            port=5432,
+            cursor_factory=psycopg2.extras.DictCursor
+        )
+    return g.db
+
+@app.teardown_appcontext
+def close_db(error=None):
+    db = getattr(g, 'db', None)
+    if db is not None:
+        db.close()
 
 # Load model khẩu trang
 mask_model = load_model("mask_detector.model")
@@ -19,9 +48,79 @@ face_app.prepare(ctx_id=0, det_size=(640, 640))
 shelf_model = YOLO("yolov8n.pt")  # Model YOLOv8 Pretrained
 
 
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Thiếu email hoặc mật khẩu"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Kiểm tra xem email đã tồn tại chưa
+    cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+    if cur.fetchone():
+        return jsonify({"error": "Email đã được sử dụng"}), 400
+
+    # Hash mật khẩu trước khi lưu
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+    # Lưu user vào database
+    cur.execute("INSERT INTO users (email, password) VALUES (%s, %s)", (email, hashed_password))
+    conn.commit()
+
+    return jsonify({"message": "Đăng ký thành công"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Thiếu email hoặc mật khẩu"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Truy vấn user theo email
+    cur.execute("SELECT id, password FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
+
+    if not user:
+        return jsonify({"error": "Email hoặc mật khẩu không đúng"}), 401
+
+    user_id, hashed_password = user["id"], user["password"]
+
+    # Kiểm tra mật khẩu có đúng không
+    if not bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
+        return jsonify({"error": "Email hoặc mật khẩu không đúng"}), 401
+
+    # Tạo JWT token
+    # access_token = create_access_token(identity=user_id)
+    # refresh_token = create_refresh_token(identity=user_id)
+
+    access_token = create_access_token(identity=str(user_id))
+    refresh_token = create_refresh_token(identity=str(user_id))
+
+
+    # Lưu token vào database
+    cur.execute("UPDATE users SET token = %s, fresh_token = %s WHERE id = %s",
+                (access_token, refresh_token, user_id))
+    conn.commit()
+
+    return jsonify({"token": access_token, "refresh_token": refresh_token})
+
+
 @app.route("/verify-identity", methods=["POST"])
+@jwt_required()
 def verify_identity():
     try:
+        user_id = get_jwt_identity()  # Lấy ID user từ token
+
         # Nhận ảnh từ request
         file1 = request.files.get("image1")
         file2 = request.files.get("image2")
@@ -57,8 +156,11 @@ def verify_identity():
 
 
 @app.route("/simple-check", methods=["POST"])
+@jwt_required()
 def simple_check():
     try:
+        user_id = get_jwt_identity()
+
         # Nhận ảnh từ request
         file1 = request.files.get("image")
 
