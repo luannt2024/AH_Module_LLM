@@ -11,6 +11,9 @@ __pycache__/
 *$py.class
 
 # Virtual environment
+venv310/
+yolov8n/
+uploads/
 venv/
 .env/
 *.venv
@@ -56,3 +59,4 @@ docker-compose.override.yml
 .env
 .env.local
 .env.*.local
+
