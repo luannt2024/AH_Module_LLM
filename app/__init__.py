@@ -15,6 +15,6 @@ def create_app():
     from .routes.upload import upload_bp
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(verification_bp, url_prefix='/verification')
-    app.register_blueprint(upload_bp)
+    app.register_blueprint(upload_bp)  # Đăng ký upload blueprint
 
     return app

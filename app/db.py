@@ -65,7 +65,8 @@ cur.execute("""
         id SERIAL PRIMARY KEY,
         status VARCHAR(50) NOT NULL DEFAULT 'pending',
         created_time TIMESTAMP NOT NULL,
-        finish_time TIMESTAMP
+        finish_time TIMESTAMP,
+        is_locked BOOLEAN DEFAULT FALSE
     );
 """)
 cur.execute("""
@@ -76,7 +77,12 @@ cur.execute("""
         employee_number VARCHAR(50),
         time TIMESTAMP,
         ess_store VARCHAR(50),
-        process_id INTEGER REFERENCES processes(id)
+        process_id INTEGER REFERENCES processes(id),
+        created_username VARCHAR(100),
+        user_role_code VARCHAR(50),
+        last_updated_time TIMESTAMP,
+        store_name VARCHAR(100),
+        original_name VARCHAR(255) 
     );
 """)
 conn.commit()
